@@ -1,4 +1,5 @@
 using backend.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,7 @@ namespace backend.Controllers{
         }
 
         [HttpGet]
+        [Authorize (Roles = "Admin")]
         public async Task<IActionResult> GetAllCustomers()
         {
             var customers = await _context.Customers.Include(c => c.Account).ToListAsync();

@@ -53,6 +53,11 @@ namespace backend.Controllers
             _context.Customers.Add(customer);
             await _context.SaveChangesAsync();
 
+            // Gửi email chào mừng
+            var emailBody = $"Chào {request.FirstName} {request.LastName},\n\nCảm ơn bạn đã đăng ký tài khoản tại MyApp!";
+            if (!SendEmail(request.Email, "Welcome to MyApp", emailBody))
+                return StatusCode(500, "Đăng ký thành công nhưng lỗi khi gửi email.");
+
             return Ok("Đăng ký thành công.");
         }
 
@@ -65,8 +70,15 @@ namespace backend.Controllers
                 return Unauthorized("Thông tin đăng nhập không chính xác.");
 
             var token = GenerateJwtToken(account);
+
+            // Gửi email thông báo đăng nhập
+            var emailBody = $"Chào {request.Email},\n\nBạn vừa đăng nhập vào tài khoản MyApp lúc {DateTime.UtcNow}. Nếu không phải bạn, hãy liên hệ với chúng tôi ngay lập tức.";
+            if (!SendEmail(request.Email, "Login Notification", emailBody))
+                Console.WriteLine("Cảnh báo: Lỗi khi gửi email thông báo đăng nhập."); // Không chặn người dùng tiếp tục sử dụng ứng dụng.
+
             return Ok(new { Token = token });
         }
+
 
         // Quên mật khẩu
         [HttpPost("forgot-password")]
@@ -114,10 +126,10 @@ namespace backend.Controllers
         {
             var claims = new[]
             {
-                new Claim(JwtRegisteredClaimNames.Sub, account.Email),
-                new Claim(ClaimTypes.Role, account.Role.RoleName),
-                new Claim("id", account.AccountId.ToString())
-            };
+        new Claim(JwtRegisteredClaimNames.Sub, account.Email),
+        new Claim("Role", account.Role.RoleName),  // Role claim is added here
+        new Claim("id", account.AccountId.ToString())
+    };
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -133,19 +145,66 @@ namespace backend.Controllers
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
+
         // Gửi Email
-        private bool SendEmail(string toEmail, string subject, string body)
+        private bool SendEmail(string toEmail, string subject, string bodyContent)
         {
             try
             {
+                // Tạo nội dung HTML của email
+                var emailBody = $@"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        font-family: Arial, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                        margin: 0;
+                        padding: 0;
+                    }}
+                    .header {{
+                        background-color: #007BFF;
+                        color: white;
+                        padding: 10px;
+                        text-align: center;
+                        font-size: 24px;
+                        font-weight: bold;
+                    }}
+                    .footer {{
+                        background-color: #f1f1f1;
+                        color: #555;
+                        padding: 10px;
+                        text-align: center;
+                        font-size: 14px;
+                    }}
+                    .content {{
+                        padding: 20px;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class='header'>MyApp</div>
+                <div class='content'>
+                    {bodyContent}
+                </div>
+                <div class='footer'>
+                    &copy; {DateTime.Now.Year} MyApp. All rights reserved.
+                </div>
+            </body>
+            </html>";
+
                 var email = new MimeMessage();
                 email.From.Add(new MailboxAddress("MyApp", _config["Email:From"]));
                 email.To.Add(new MailboxAddress("", toEmail));
                 email.Subject = subject;
-                email.Body = new TextPart("plain") { Text = body };
+
+                // Thiết lập email gửi với định dạng HTML
+                email.Body = new TextPart("html") { Text = emailBody };
 
                 using var smtp = new SmtpClient();
-                smtp.Connect(_config["Email:SmtpServer"], 587, SecureSocketOptions.StartTls); 
+                smtp.Connect(_config["Email:SmtpServer"], 587, SecureSocketOptions.StartTls);
                 smtp.Authenticate(_config["Email:Username"], _config["Email:Password"]);
                 smtp.Send(email);
                 smtp.Disconnect(true);
@@ -158,6 +217,7 @@ namespace backend.Controllers
                 return false;
             }
         }
+
     }
     public class RegisterRequest
     {
